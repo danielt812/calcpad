@@ -18,6 +18,7 @@ var (
 	parenStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // orange
 	aggregateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // purple
 	constantStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("220")) // yellow
+	funcStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("213")) // pink
 	lineNumStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // grey
 	cursorStyle    = lipgloss.NewStyle().Reverse(true)
 )
@@ -48,6 +49,10 @@ func (e *Editor) Lines() []string { return e.lines }
 
 var constantKeywords = map[string]bool{
 	"pi": true, "tau": true, "e": true, "phi": true,
+}
+
+var funcKeywords = map[string]bool{
+	"sqrt": true, "squareroot": true, "root": true,
 }
 
 var aggregateKeywords = map[string]bool{
@@ -124,7 +129,7 @@ func highlightLine(s string) string {
 	for i < len(s) {
 		ch := s[i]
 		switch {
-		case ch == '+' || ch == '-' || ch == '*' || ch == '/' || ch == '%':
+		case ch == '+' || ch == '-' || ch == '*' || ch == '/' || ch == '%' || ch == '^':
 			b.WriteString(operStyle.Render(string(ch)))
 			i++
 		case ch == '(' || ch == ')':
@@ -143,6 +148,8 @@ func highlightLine(s string) string {
 				b.WriteString(aggregateStyle.Render(word))
 			} else if constantKeywords[lower] {
 				b.WriteString(constantStyle.Render(word))
+			} else if funcKeywords[lower] {
+				b.WriteString(funcStyle.Render(word))
 			} else {
 				b.WriteString(normalStyle.Render(word))
 			}
@@ -490,12 +497,19 @@ func (m model) helpView() string {
 		{"MED", "median value"},
 	}
 
-	header := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render
+	grey := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	wordSt := normalStyle.Render
 
-	opCol := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Width(11)
-	aggCol := lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Width(10)
-	constCol := lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Width(6)
+	const colW = 10
+	hdrCol := grey.Width(colW)
+	opCol := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Width(colW)
+	aggCol := lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Width(colW)
+	constCol := lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Width(colW)
+
+	section := func(label, sep, rightLabel string) (string, string) {
+		return "  " + hdrCol.Render(label) + grey.Render(rightLabel),
+			"  " + hdrCol.Render(strings.Repeat("─", len(label))) + grey.Render(strings.Repeat("─", len(rightLabel)))
+	}
 
 	constRows := []row{
 		{"PI", "3.14159… (π)"},
@@ -505,25 +519,25 @@ func (m model) helpView() string {
 	}
 
 	var lines []string
-	lines = append(lines, header("  operator   words"))
-	lines = append(lines, header("  ────────   ─────"))
+	h, s := section("operator", "", "words")
+	lines = append(lines, h, s)
 	for _, r := range operatorRows {
 		lines = append(lines, "  "+opCol.Render(r.operator)+wordSt(r.words))
 	}
 	lines = append(lines, "")
-	lines = append(lines, header("  keyword   description"))
-	lines = append(lines, header("  ───────   ───────────"))
+	h, s = section("keyword", "", "description")
+	lines = append(lines, h, s)
 	for _, r := range aggregateRows {
 		lines = append(lines, "  "+aggCol.Render(r.operator)+wordSt(r.words))
 	}
 	lines = append(lines, "")
-	lines = append(lines, header("  const   value"))
-	lines = append(lines, header("  ─────   ─────"))
+	h, s = section("const", "", "value")
+	lines = append(lines, h, s)
 	for _, r := range constRows {
 		lines = append(lines, "  "+constCol.Render(r.operator)+wordSt(r.words))
 	}
 	lines = append(lines, "")
-	lines = append(lines, header("  ctrl+h to close"))
+	lines = append(lines, grey.Render("  esc or ctrl+h to close"))
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

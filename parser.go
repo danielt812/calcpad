@@ -69,7 +69,7 @@ func (p *Parser) parsePrimary() (Node, error) {
 	return nil, fmt.Errorf("unexpected token: %q", p.current.Literal)
 }
 
-// parseUnary: ['-'] primary
+// parseUnary: ['-' | 'sqrt'] primary
 func (p *Parser) parseUnary() (Node, error) {
 	if p.current.Type == MINUS {
 		p.advance()
@@ -79,19 +79,44 @@ func (p *Parser) parseUnary() (Node, error) {
 		}
 		return &UnaryNode{Operator: MINUS, Operand: operand}, nil
 	}
+	if p.current.Type == SQRT {
+		p.advance()
+		operand, err := p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
+		return &UnaryNode{Operator: SQRT, Operand: operand}, nil
+	}
 	return p.parsePrimary()
 }
 
-// parseTerm: unary (('*' | '/' | '%') unary)*
+// parsePower: unary ('^' unary)* — right-associative
+func (p *Parser) parsePower() (Node, error) {
+	base, err := p.parseUnary()
+	if err != nil {
+		return nil, err
+	}
+	if p.current.Type == CARET {
+		p.advance()
+		exp, err := p.parsePower() // right-recursive for right-associativity
+		if err != nil {
+			return nil, err
+		}
+		return &BinaryNode{Left: base, Operator: CARET, Right: exp}, nil
+	}
+	return base, nil
+}
+
+// parseTerm: power (('*' | '/' | '%') power)*
 func (p *Parser) parseTerm() (Node, error) {
-	left, err := p.parseUnary()
+	left, err := p.parsePower()
 	if err != nil {
 		return nil, err
 	}
 	for p.current.Type == STAR || p.current.Type == SLASH || p.current.Type == PERCENT {
 		op := p.current.Type
 		p.advance()
-		right, err := p.parseUnary()
+		right, err := p.parsePower()
 		if err != nil {
 			return nil, err
 		}
@@ -143,8 +168,14 @@ func Evaluate(node Node) (float64, error) {
 		if err != nil {
 			return 0, err
 		}
-		if n.Operator == MINUS {
+		switch n.Operator {
+		case MINUS:
 			return -val, nil
+		case SQRT:
+			if val < 0 {
+				return 0, fmt.Errorf("square root of negative number")
+			}
+			return math.Sqrt(val), nil
 		}
 		return val, nil
 	case *BinaryNode:
@@ -173,6 +204,8 @@ func Evaluate(node Node) (float64, error) {
 				return 0, fmt.Errorf("division by zero")
 			}
 			return math.Mod(left, right), nil
+		case CARET:
+			return math.Pow(left, right), nil
 		}
 	}
 	return 0, fmt.Errorf("unknown node type")

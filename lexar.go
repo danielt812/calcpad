@@ -16,8 +16,10 @@ const (
 	STAR
 	SLASH
 	PERCENT
+	CARET
 	LPAREN
 	RPAREN
+	SQRT
 	EOF
 	ILLEGAL
 )
@@ -61,6 +63,8 @@ func (line *Lexer) NextToken() Token {
 		return Token{Type: SLASH, Literal: "/"}
 	case '%':
 		return Token{Type: PERCENT, Literal: "%"}
+	case '^':
+		return Token{Type: CARET, Literal: "^"}
 	case '(':
 		return Token{Type: LPAREN, Literal: "("}
 	case ')':
@@ -98,6 +102,8 @@ func (line *Lexer) NextToken() Token {
 				return Token{Type: NUMBER, Literal: strconv.FormatFloat(math.E, 'f', -1, 64)}
 			case "phi":
 				return Token{Type: NUMBER, Literal: strconv.FormatFloat(math.Phi, 'f', -1, 64)}
+			case "sqrt", "squareroot", "root":
+				return Token{Type: SQRT, Literal: "sqrt"}
 			}
 		}
 		return Token{Type: ILLEGAL, Literal: string(char)}
