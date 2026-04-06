@@ -34,19 +34,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editor.Height = msg.Height - 1
 
 	case tea.KeyMsg:
-		switch k := msg.String(); {
-		case k == "esc" || k == m.cfg.Keys.Quit:
+		switch k := msg.String(); k {
+		case "esc", m.cfg.Keys.Quit:
 			if m.showHelp {
 				m.showHelp = false
 				return m, nil
 			}
 			return m, tea.Quit
 
-		case k == m.cfg.Keys.Help:
+		case m.cfg.Keys.Help:
 			m.showHelp = !m.showHelp
 			return m, nil
 
-		case k == m.cfg.Keys.Format:
+		case m.cfg.Keys.Format:
 			for i, line := range m.editor.lines {
 				formatted := formatLine(line)
 				if formatted != line {
@@ -59,7 +59,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.results = evalLines(m.editor.Lines())
 			return m, nil
 
-		case k == m.cfg.Keys.Reset:
+		case m.cfg.Keys.Reset:
 			m.editor.Reset()
 			m.results = nil
 			return m, nil
