@@ -142,9 +142,9 @@ var funcKeywords = map[string]bool{
 }
 
 var aggregateKeywords = map[string]bool{
-	"sum": true, "avg": true, "average": true,
-	"min": true, "max": true,
-	"cnt": true, "med": true, "prd": true,
+	"SUM": true, "AVG": true,
+	"MIN": true, "MAX": true,
+	"CNT": true, "MED": true, "PRD": true,
 }
 
 var wordOperators = map[string]bool{
@@ -162,6 +162,85 @@ var wordOperators = map[string]bool{
 
 func isLetter(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// padCompletedWordOp triggers when a letter is typed and the word ending at
+// the cursor exactly matches a word operator — mirrors the + behaviour.
+func padCompletedWordOp(line string, col int) (string, int) {
+	if col == 0 {
+		return line, col
+	}
+	end := col - 1
+	start := end
+	for start > 0 && isLetter(line[start-1]) {
+		start--
+	}
+	word := line[start:col]
+	if !wordOperators[strings.ToLower(word)] {
+		return line, col
+	}
+	// Add trailing space so next character lands correctly
+	if col >= len(line) || line[col] != ' ' {
+		line = line[:col] + " " + line[col:]
+		col++
+	}
+	// Add space before word
+	if start > 0 && line[start-1] != ' ' {
+		line = line[:start] + " " + line[start:]
+		col++
+	}
+	return line, col
+}
+
+// padWordOperator adds spaces around a word operator that was just completed.
+// Triggered when a non-letter is typed and the char before it ends a word operator.
+func padWordOperator(line string, col int) (string, int) {
+	if col < 2 {
+		return line, col
+	}
+	prev := col - 2 // char before what was just typed
+	if !isLetter(line[prev]) {
+		return line, col
+	}
+	end := prev
+	start := end
+	for start > 0 && isLetter(line[start-1]) {
+		start--
+	}
+	word := line[start : end+1]
+	if !wordOperators[strings.ToLower(word)] {
+		return line, col
+	}
+	afterWord := end + 1
+	if afterWord < len(line) && line[afterWord] != ' ' {
+		line = line[:afterWord] + " " + line[afterWord:]
+		col++
+	}
+	if start > 0 && line[start-1] != ' ' {
+		line = line[:start] + " " + line[start:]
+		col++
+	}
+	return line, col
+}
+
+// padOperator ensures a single space before and after the operator at col-1.
+func padOperator(line string, col int) (string, int) {
+	if col == 0 {
+		return line, col
+	}
+	opPos := col - 1
+	// Add space after operator
+	afterPos := opPos + 1
+	if afterPos >= len(line) || line[afterPos] != ' ' {
+		line = line[:afterPos] + " " + line[afterPos:]
+		col++
+	}
+	// Add space before operator
+	if opPos > 0 && line[opPos-1] != ' ' {
+		line = line[:opPos] + " " + line[opPos:]
+		col++
+	}
+	return line, col
 }
 
 func formatLine(s string) string {
@@ -230,7 +309,7 @@ func highlightLine(s string) string {
 			lower := strings.ToLower(word)
 			if wordOperators[lower] {
 				b.WriteString(operStyle.Render(word))
-			} else if aggregateKeywords[lower] {
+			} else if aggregateKeywords[word] {
 				b.WriteString(aggregateStyle.Render(word))
 			} else if constantKeywords[lower] {
 				b.WriteString(constantStyle.Render(word))
@@ -422,19 +501,19 @@ func evalLines(lines []string) []string {
 			return ""
 		}
 		switch keyword {
-		case "sum":
+		case "SUM":
 			s := 0.0
 			for _, v := range prevValues {
 				s += v
 			}
 			return FormatResult(s)
-		case "avg", "average":
+		case "AVG":
 			s := 0.0
 			for _, v := range prevValues {
 				s += v
 			}
 			return FormatResult(s / float64(len(prevValues)))
-		case "min":
+		case "MIN":
 			m := prevValues[0]
 			for _, v := range prevValues[1:] {
 				if v < m {
@@ -442,7 +521,7 @@ func evalLines(lines []string) []string {
 				}
 			}
 			return FormatResult(m)
-		case "max":
+		case "MAX":
 			m := prevValues[0]
 			for _, v := range prevValues[1:] {
 				if v > m {
@@ -450,15 +529,15 @@ func evalLines(lines []string) []string {
 				}
 			}
 			return FormatResult(m)
-		case "cnt":
+		case "CNT":
 			return FormatResult(float64(len(prevValues)))
-		case "prd":
+		case "PRD":
 			p := 1.0
 			for _, v := range prevValues {
 				p *= v
 			}
 			return FormatResult(p)
-		case "med":
+		case "MED":
 			sorted := make([]float64, len(prevValues))
 			copy(sorted, prevValues)
 			for i := 1; i < len(sorted); i++ {
@@ -482,7 +561,7 @@ func evalLines(lines []string) []string {
 		if line == "" {
 			continue
 		}
-		if r := aggregate(strings.ToLower(line)); r != "" {
+		if r := aggregate(line); r != "" {
 			results[i] = r
 			if v, err := strconv.ParseFloat(r, 64); err == nil {
 				prevValues = append(prevValues, v)
@@ -525,8 +604,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editor.Height = msg.Height - 1
 
 	case tea.KeyMsg:
-		k := msg.String()
-		switch {
+		switch k := msg.String(); {
 		case k == "esc" || k == m.cfg.Keys.Quit:
 			if m.showHelp {
 				m.showHelp = false
@@ -562,10 +640,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editor.Update(msg)
 		if autoFormat {
 			row := m.editor.row
-			line := m.editor.lines[row]
-			if formatted := formatLine(line); formatted != line {
-				m.editor.col = adjustCursor(line, formatted, m.editor.col)
-				m.editor.lines[row] = formatted
+			if msg.Type == tea.KeyRunes && strings.ContainsAny(string(msg.Runes), "+-*/%^") {
+				m.editor.lines[row], m.editor.col = padOperator(m.editor.lines[row], m.editor.col)
+			} else if msg.Type == tea.KeyRunes && isLetter(string(msg.Runes)[0]) {
+				// Trigger immediately when a letter completes a word operator
+				m.editor.lines[row], m.editor.col = padCompletedWordOp(m.editor.lines[row], m.editor.col)
+			} else if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
+				// Fallback: non-letter typed after a word operator
+				m.editor.lines[row], m.editor.col = padWordOperator(m.editor.lines[row], m.editor.col)
 			}
 		}
 		m.results = evalLines(m.editor.Lines())
@@ -602,7 +684,7 @@ func (m model) helpView() string {
 	aggCol := lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Width(colW)
 	constCol := lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Width(colW)
 
-	section := func(label, sep, rightLabel string) (string, string) {
+	section := func(label, rightLabel string) (string, string) {
 		return "  " + hdrCol.Render(label) + grey.Render(rightLabel),
 			"  " + hdrCol.Render(strings.Repeat("─", len(label))) + grey.Render(strings.Repeat("─", len(rightLabel)))
 	}
@@ -615,19 +697,19 @@ func (m model) helpView() string {
 	}
 
 	var lines []string
-	h, s := section("operator", "", "words")
+	h, s := section("operator", "words")
 	lines = append(lines, h, s)
 	for _, r := range operatorRows {
 		lines = append(lines, "  "+opCol.Render(r.operator)+wordSt(r.words))
 	}
 	lines = append(lines, "")
-	h, s = section("keyword", "", "description")
+	h, s = section("keyword", "description")
 	lines = append(lines, h, s)
 	for _, r := range aggregateRows {
 		lines = append(lines, "  "+aggCol.Render(r.operator)+wordSt(r.words))
 	}
 	lines = append(lines, "")
-	h, s = section("const", "", "value")
+	h, s = section("const", "value")
 	lines = append(lines, h, s)
 	for _, r := range constRows {
 		lines = append(lines, "  "+constCol.Render(r.operator)+wordSt(r.words))
@@ -683,12 +765,17 @@ func (m model) View() string {
 		Width(m.width).
 		PaddingLeft(1).
 		Background(lipgloss.Color("235")).
-		Render(strings.Join([]string{
-			hint(m.cfg.Keys.Quit, "quit"),
-			hint(m.cfg.Keys.Reset, "reset"),
-			hint(m.cfg.Keys.Format, "format"),
-			hint(m.cfg.Keys.Help, "help"),
-		}, sep))
+		Render(func() string {
+			hints := []string{
+				hint(m.cfg.Keys.Quit, "quit"),
+				hint(m.cfg.Keys.Reset, "reset"),
+			}
+			if !m.cfg.AutoFormat {
+				hints = append(hints, hint(m.cfg.Keys.Format, "format"))
+			}
+			hints = append(hints, hint(m.cfg.Keys.Help, "help"))
+			return strings.Join(hints, sep)
+		}())
 
 	editorView := lipgloss.NewStyle().Width(inputWidth).Render(m.editor.View())
 	return lipgloss.JoinHorizontal(lipgloss.Top, editorView, strings.Join(resultLines, "\n")) + "\n" + footer
