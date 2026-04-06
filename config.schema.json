@@ -4,6 +4,15 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "precision": {
+      "type": "integer",
+      "minimum": -1,
+      "description": "Decimal places to round results to. -1 = full precision."
+    },
+    "auto_format": {
+      "type": "boolean",
+      "description": "Automatically format lines as you type (spaces around operators, etc.)."
+    },
     "colors": {
       "type": "object",
       "additionalProperties": false,

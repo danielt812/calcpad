@@ -213,8 +213,15 @@ func Evaluate(node Node) (float64, error) {
 
 // FormatResult formats a float64 for display, using integer form when exact.
 func FormatResult(v float64) string {
+	if resultPrecision >= 0 {
+		factor := math.Pow(10, float64(resultPrecision))
+		v = math.Round(v*factor) / factor
+	}
 	if v == math.Trunc(v) && !math.IsInf(v, 0) {
 		return strconv.FormatInt(int64(v), 10)
+	}
+	if resultPrecision >= 0 {
+		return strconv.FormatFloat(v, 'f', resultPrecision, 64)
 	}
 	return strconv.FormatFloat(v, 'f', 10, 64)
 }

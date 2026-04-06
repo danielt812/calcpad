@@ -35,12 +35,16 @@ type KeyConfig struct {
 }
 
 type Config struct {
-	Colors ColorConfig `yaml:"colors"`
-	Keys   KeyConfig   `yaml:"keys"`
+	Colors     ColorConfig `yaml:"colors"`
+	Keys       KeyConfig   `yaml:"keys"`
+	Precision  int         `yaml:"precision"`   // decimal places, -1 = full precision
+	AutoFormat bool        `yaml:"auto_format"` // format lines as you type
 }
 
 func defaultConfig() Config {
 	return Config{
+		Precision:  -1,
+		AutoFormat: false,
 		Colors: ColorConfig{
 			Normal:      "15",
 			Operators:   "14",
@@ -85,12 +89,16 @@ var (
 	constantStyle  lipgloss.Style
 	funcStyle      lipgloss.Style
 	lineNumStyle   lipgloss.Style
-	cursorStyle    = lipgloss.NewStyle().Reverse(true)
-	resultColor    string
+	cursorStyle      = lipgloss.NewStyle().Reverse(true)
+	resultColor      string
+	resultPrecision  int
+	autoFormat       bool
 )
 
 func initStyles(cfg Config) {
 	c := cfg.Colors
+	resultPrecision = cfg.Precision
+	autoFormat = cfg.AutoFormat
 	normalStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color(c.Normal))
 	operStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color(c.Operators))
 	parenStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color(c.Parens))
@@ -552,6 +560,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.editor.Update(msg)
+		if autoFormat {
+			row := m.editor.row
+			line := m.editor.lines[row]
+			if formatted := formatLine(line); formatted != line {
+				m.editor.col = adjustCursor(line, formatted, m.editor.col)
+				m.editor.lines[row] = formatted
+			}
+		}
 		m.results = evalLines(m.editor.Lines())
 	}
 
