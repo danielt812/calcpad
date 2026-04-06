@@ -5,23 +5,101 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"gopkg.in/yaml.v3"
 )
 
+// ── Config ────────────────────────────────────────────────────────────────────
+
+type ColorConfig struct {
+	Normal      string `yaml:"normal"`
+	Operators   string `yaml:"operators"`
+	Parens      string `yaml:"parens"`
+	Aggregates  string `yaml:"aggregates"`
+	Constants   string `yaml:"constants"`
+	Functions   string `yaml:"functions"`
+	LineNumbers string `yaml:"line_numbers"`
+	Results     string `yaml:"results"`
+}
+
+type KeyConfig struct {
+	Quit   string `yaml:"quit"`
+	Reset  string `yaml:"reset"`
+	Format string `yaml:"format"`
+	Help   string `yaml:"help"`
+}
+
+type Config struct {
+	Colors ColorConfig `yaml:"colors"`
+	Keys   KeyConfig   `yaml:"keys"`
+}
+
+func defaultConfig() Config {
+	return Config{
+		Colors: ColorConfig{
+			Normal:      "15",
+			Operators:   "14",
+			Parens:      "214",
+			Aggregates:  "141",
+			Constants:   "220",
+			Functions:   "213",
+			LineNumbers: "240",
+			Results:     "84",
+		},
+		Keys: KeyConfig{
+			Quit:   "ctrl+c",
+			Reset:  "ctrl+r",
+			Format: "ctrl+f",
+			Help:   "ctrl+h",
+		},
+	}
+}
+
+func loadConfig() Config {
+	cfg := defaultConfig()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return cfg
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".config", "calcpad", "config.yaml"))
+	if err != nil {
+		return cfg
+	}
+	// Unmarshal into the populated default — only keys present in the file are overwritten.
+	yaml.Unmarshal(data, &cfg) //nolint:errcheck
+	return cfg
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
 var (
-	normalStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))  // white
-	operStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))  // cyan
-	parenStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // orange
-	aggregateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // purple
-	constantStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("220")) // yellow
-	funcStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("213")) // pink
-	lineNumStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // grey
+	normalStyle    lipgloss.Style
+	operStyle      lipgloss.Style
+	parenStyle     lipgloss.Style
+	aggregateStyle lipgloss.Style
+	constantStyle  lipgloss.Style
+	funcStyle      lipgloss.Style
+	lineNumStyle   lipgloss.Style
 	cursorStyle    = lipgloss.NewStyle().Reverse(true)
+	resultColor    string
 )
+
+func initStyles(cfg Config) {
+	c := cfg.Colors
+	normalStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color(c.Normal))
+	operStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color(c.Operators))
+	parenStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color(c.Parens))
+	aggregateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(c.Aggregates))
+	constantStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color(c.Constants))
+	funcStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color(c.Functions))
+	lineNumStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color(c.LineNumbers))
+	resultColor    = c.Results
+}
 
 // Editor is a minimal multi-line editor with syntax highlighting support.
 type Editor struct {
@@ -305,6 +383,7 @@ type model struct {
 	width    int
 	height   int
 	showHelp bool
+	cfg      Config
 }
 
 func lineStartsWithOperator(line string) bool {
@@ -423,8 +502,8 @@ func evalLines(lines []string) []string {
 	return results
 }
 
-func initialModel() model {
-	return model{editor: NewEditor()}
+func initialModel(cfg Config) model {
+	return model{editor: NewEditor(), cfg: cfg}
 }
 
 func (m model) Init() tea.Cmd { return nil }
@@ -438,19 +517,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editor.Height = msg.Height - 1
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "esc":
+		k := msg.String()
+		switch {
+		case k == "esc" || k == m.cfg.Keys.Quit:
 			if m.showHelp {
 				m.showHelp = false
 				return m, nil
 			}
 			return m, tea.Quit
 
-		case "ctrl+h":
+		case k == m.cfg.Keys.Help:
 			m.showHelp = !m.showHelp
 			return m, nil
 
-		case "ctrl+f":
+		case k == m.cfg.Keys.Format:
 			for i, line := range m.editor.lines {
 				formatted := formatLine(line)
 				if formatted != line {
@@ -463,7 +543,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.results = evalLines(m.editor.Lines())
 			return m, nil
 
-		case "ctrl+r":
+		case k == m.cfg.Keys.Reset:
 			m.editor.Reset()
 			m.results = nil
 			return m, nil
@@ -566,7 +646,7 @@ func (m model) View() string {
 		lineIdx := m.editor.offset + i
 		if lineIdx < len(m.results) && m.results[lineIdx] != "" {
 			resultLines[i] = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("84")).
+				Foreground(lipgloss.Color(resultColor)).
 				Width(resultWidth).
 				Align(lipgloss.Right).
 				Render(m.results[lineIdx])
@@ -576,36 +656,32 @@ func (m model) View() string {
 	}
 
 	hint := func(key, desc string) string {
-		k := lipgloss.NewStyle().
-			Background(lipgloss.Color("235")).
-			Foreground(lipgloss.Color("84")).
-			PaddingRight(1).
-			Render(key)
-		d := lipgloss.NewStyle().
-			Background(lipgloss.Color("235")).
-			Foreground(lipgloss.Color("245")).
-			PaddingRight(1).
-			Render(desc)
+		display := strings.ReplaceAll(key, "ctrl+", "^")
+		k := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color(resultColor)).PaddingRight(1).Render(display)
+		d := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("245")).PaddingRight(1).Render(desc)
 		return k + d
 	}
-	sep := lipgloss.NewStyle().
-		Background(lipgloss.Color("235")).
-		Foreground(lipgloss.Color("15")).
-		PaddingRight(1).
-		Render("│")
+	sep := lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(lipgloss.Color("15")).PaddingRight(1).Render("│")
 
 	footer := lipgloss.NewStyle().
 		Width(m.width).
 		PaddingLeft(1).
 		Background(lipgloss.Color("235")).
-		Render(strings.Join([]string{hint("^c", "quit"), hint("^r", "reset"), hint("^f", "format"), hint("^h", "help")}, sep))
+		Render(strings.Join([]string{
+			hint(m.cfg.Keys.Quit, "quit"),
+			hint(m.cfg.Keys.Reset, "reset"),
+			hint(m.cfg.Keys.Format, "format"),
+			hint(m.cfg.Keys.Help, "help"),
+		}, sep))
 
 	editorView := lipgloss.NewStyle().Width(inputWidth).Render(m.editor.View())
 	return lipgloss.JoinHorizontal(lipgloss.Top, editorView, strings.Join(resultLines, "\n")) + "\n" + footer
 }
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	cfg := loadConfig()
+	initStyles(cfg)
+	p := tea.NewProgram(initialModel(cfg), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		os.Exit(1)
 	}

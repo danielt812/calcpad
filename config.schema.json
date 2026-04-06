@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "calcpad config",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "colors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "normal":       { "$ref": "#/$defs/color", "description": "Regular text" },
+        "operators":    { "$ref": "#/$defs/color", "description": "+ - * / % ^" },
+        "parens":       { "$ref": "#/$defs/color", "description": "( )" },
+        "aggregates":   { "$ref": "#/$defs/color", "description": "SUM AVG MIN MAX MED CNT PRD" },
+        "constants":    { "$ref": "#/$defs/color", "description": "PI E TAU PHI" },
+        "functions":    { "$ref": "#/$defs/color", "description": "sqrt" },
+        "line_numbers": { "$ref": "#/$defs/color", "description": "Line number gutter" },
+        "results":      { "$ref": "#/$defs/color", "description": "Evaluated results shown on the right" }
+      }
+    },
+    "keys": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "quit":   { "$ref": "#/$defs/keybind", "description": "Quit the app" },
+        "reset":  { "$ref": "#/$defs/keybind", "description": "Clear the scratchpad" },
+        "format": { "$ref": "#/$defs/keybind", "description": "Format all lines" },
+        "help":   { "$ref": "#/$defs/keybind", "description": "Toggle help overlay" }
+      }
+    }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "description": "256-color terminal color code (0–255) or hex (#rrggbb)",
+      "pattern": "^([0-9]{1,3}|#[0-9a-fA-F]{6})$"
+    },
+    "keybind": {
+      "type": "string",
+      "description": "Key combination, e.g. ctrl+c, ctrl+h, f1",
+      "pattern": "^(ctrl\\+[a-z]|f[1-9]|f1[0-2]|[a-z])$"
+    }
+  }
+}
